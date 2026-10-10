@@ -1,0 +1,1527 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Misi Kata Kerja: Pengembaraan Kota Bahasa</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Outfit:wght@500;700;800;900&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Three.js (3D Graphics Engine) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- MediaPipe Hands & Camera Utils -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    body {
+      font-family: 'Poppins', 'Nunito', sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      overflow: hidden;
+      background-color: #090d16;
+    }
+    .font-outfit { font-family: 'Outfit', sans-serif; }
+    .text-glow-cyan { text-shadow: 0 0 12px rgba(6, 182, 212, 0.8); }
+    .text-glow-amber { text-shadow: 0 0 12px rgba(245, 158, 11, 0.8); }
+    .text-glow-purple { text-shadow: 0 0 12px rgba(168, 85, 247, 0.8); }
+    
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .glass-panel-cyan {
+      background: rgba(8, 47, 73, 0.85);
+      border: 1px solid rgba(6, 182, 212, 0.5);
+      box-shadow: 0 0 25px rgba(6, 182, 212, 0.25);
+    }
+    .glass-panel-purple {
+      background: rgba(46, 16, 101, 0.85);
+      border: 1px solid rgba(168, 85, 247, 0.5);
+      box-shadow: 0 0 25px rgba(168, 85, 247, 0.25);
+    }
+    
+    /* Mirror Camera Feed */
+    .mirror-view {
+      transform: scaleX(-1);
+    }
+    
+    /* Toast Slide Animation */
+    @keyframes slideInUp {
+      from { transform: translateY(100%) scale(0.9); opacity: 0; }
+      to { transform: translateY(0) scale(1); opacity: 1; }
+    }
+    .animate-toast {
+      animation: slideInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #06b6d4;
+    }
+  </style>
+</head>
+<body class="relative w-screen h-screen text-white overflow-hidden select-none bg-slate-950">
+
+  <!-- 3D THREE.JS CANVAS -->
+  <canvas id="three-canvas" class="absolute inset-0 w-full h-full z-0 pointer-events-none"></canvas>
+
+  <!-- 2D OVERLAY CANVAS FOR HAND TRACKING SKELETON & CURSOR -->
+  <canvas id="hand-canvas" class="absolute inset-0 w-full h-full z-10 pointer-events-auto cursor-grab active:cursor-grabbing"></canvas>
+
+  <!-- HIDDEN WEBCAM VIDEO ELEMENT -->
+  <video id="webcam-video" class="hidden" playsinline></video>
+
+  <!-- MAIN HUD / TOP BAR -->
+  <header id="game-hud" class="absolute top-0 left-0 right-0 z-20 p-4 flex justify-between items-center pointer-events-none transition-opacity duration-300 opacity-0">
+    <!-- Left Info -->
+    <div class="flex items-center space-x-3 pointer-events-auto">
+      <div class="glass-panel px-4 py-2 rounded-2xl flex items-center space-x-3 border border-cyan-500/30 shadow-lg">
+        <div class="w-3 h-3 rounded-full bg-cyan-400 animate-pulse"></div>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-cyan-300 font-bold">Misi Utama</div>
+          <div class="text-sm font-semibold text-white">Kota Bahasa Melayu</div>
+        </div>
+      </div>
+      <button id="btn-pause-hint" class="glass-panel hover:bg-slate-800 text-xs px-3.5 py-2.5 rounded-xl text-cyan-300 font-medium transition flex items-center space-x-1 border border-cyan-500/30">
+        <span>💡 Petunjuk Tatabahasa</span>
+      </button>
+    </div>
+
+    <!-- Center HUD Stats -->
+    <div class="flex items-center space-x-3 pointer-events-auto">
+      <!-- Skor -->
+      <div class="glass-panel px-5 py-1.5 rounded-2xl text-center border border-amber-500/40 min-w-[110px] shadow-lg">
+        <div class="text-[10px] uppercase text-amber-400 font-bold tracking-wider">SKOR</div>
+        <div id="hud-score" class="font-outfit text-2xl font-black text-amber-300 text-glow-amber">0</div>
+      </div>
+
+      <!-- Masa -->
+      <div class="glass-panel px-5 py-1.5 rounded-2xl text-center border border-cyan-500/40 min-w-[110px] shadow-lg">
+        <div class="text-[10px] uppercase text-cyan-400 font-bold tracking-wider">MASA</div>
+        <div id="hud-timer" class="font-outfit text-2xl font-black text-cyan-300 text-glow-cyan">02:00</div>
+      </div>
+
+      <!-- Kemajuan Kad -->
+      <div class="glass-panel px-5 py-1.5 rounded-2xl text-center border border-emerald-500/40 min-w-[110px] shadow-lg">
+        <div class="text-[10px] uppercase text-emerald-400 font-bold tracking-wider">KEMAJUAN</div>
+        <div id="hud-progress" class="font-outfit text-2xl font-black text-emerald-300">0 / 10</div>
+      </div>
+    </div>
+
+    <!-- Right Controls -->
+    <div class="flex items-center space-x-2 pointer-events-auto">
+      <button id="btn-toggle-sound" class="glass-panel hover:bg-slate-800 p-2.5 rounded-xl text-white transition border border-slate-700 shadow-lg" title="Audio">
+        🔊
+      </button>
+      <button id="btn-open-teacher-hud" class="glass-panel hover:bg-slate-800 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-purple-300 border border-purple-500/40 transition shadow-lg">
+        ⚙️ Mod Guru
+      </button>
+    </div>
+  </header>
+
+  <!-- CAMERA PIP / PREVIEW PANEL (TOP-RIGHT BELOW HUD) -->
+  <div id="camera-panel" class="absolute top-20 right-4 z-20 glass-panel p-2 rounded-2xl border border-cyan-500/30 flex flex-col items-center shadow-2xl transition-opacity duration-300 opacity-0">
+    <div class="relative w-36 h-28 bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
+      <video id="pip-video" class="w-full h-full object-cover mirror-view" autoplay muted playsinline></video>
+      <div id="hand-status-badge" class="absolute bottom-1 left-1 right-1 bg-slate-900/90 text-[9px] text-center py-0.5 rounded text-cyan-300 font-mono border border-cyan-500/30">
+        MENUNGGU TANGAN...
+      </div>
+    </div>
+    <div class="mt-1 flex items-center justify-between w-full px-1 text-[10px] text-slate-400">
+      <span id="gesture-indicator">Jari Terbuka</span>
+      <span id="cam-fps" class="text-emerald-400 font-mono">-- FPS</span>
+    </div>
+  </div>
+
+  <!-- NOTIFICATION TOAST CONTAINER -->
+  <div id="toast-container" class="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none flex flex-col items-center space-y-2 max-w-xl w-full px-4"></div>
+
+  <!-- MODAL 1: START / MENU MAIN -->
+  <div id="modal-start" class="fixed inset-0 z-40 bg-slate-950/85 backdrop-blur-xl flex items-center justify-center p-4">
+    <div class="max-w-2xl w-full glass-panel p-8 rounded-3xl border border-cyan-500/40 shadow-2xl text-center relative overflow-hidden">
+      <!-- Ambient Glow Decor -->
+      <div class="absolute -top-24 -left-24 w-48 h-48 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -right-24 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="inline-block px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 text-xs font-semibold mb-3 tracking-wider uppercase">
+        Bahasa Melayu Tingkatan 3
+      </div>
+      <h1 class="text-3xl md:text-5xl font-black font-outfit text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-teal-200 to-purple-400 mb-2 leading-tight">
+        MISI KATA KERJA
+      </h1>
+      <p class="text-slate-300 text-sm md:text-base mb-6 font-medium">
+        Pengembaraan Kota Bahasa: Penguasaan Kata Kerja Transitif & Tak Transitif dengan AI Hand Tracking!
+      </p>
+
+      <!-- Control Instructions Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6 text-left">
+        <div class="bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
+          <div class="text-cyan-400 font-bold text-xs mb-1 flex items-center">
+            <span class="text-base mr-1">🖐️</span> 1. Gerakkan Tangan
+          </div>
+          <p class="text-[11px] text-slate-400">Tunjukkan tapak tangan ke kamera. Penunjuk neon akan mengikut pergerakan tangan anda secara cermin.</p>
+        </div>
+        <div class="bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
+          <div class="text-amber-400 font-bold text-xs mb-1 flex items-center">
+            <span class="text-base mr-1">👌</span> 2. Cubit Untuk Pegang
+          </div>
+          <p class="text-[11px] text-slate-400">Rapatkan ibu jari & jari telunjuk di atas kad kata kerja terapung untuk mengangkat kad.</p>
+        </div>
+        <div class="bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
+          <div class="text-emerald-400 font-bold text-xs mb-1 flex items-center">
+            <span class="text-base mr-1">🎯</span> 3. Bawa & Lepas
+          </div>
+          <p class="text-[11px] text-slate-400">Bawa kad ke Zon Jawapan yang betul (Transitif / Tak Transitif) dan buka jari anda untuk melepaskannya.</p>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+        <button id="btn-start-game" class="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 font-bold rounded-2xl text-white shadow-lg shadow-cyan-500/30 transition transform hover:scale-105 active:scale-95 text-sm uppercase tracking-wider">
+          🚀 Mula Permainan
+        </button>
+        <button id="btn-open-teacher-menu" class="w-full sm:w-auto px-6 py-3.5 bg-slate-800 hover:bg-slate-700 font-semibold rounded-2xl text-purple-300 border border-purple-500/30 transition text-sm">
+          ⚙️ Mod Guru
+        </button>
+        <button id="btn-open-leaderboard" class="w-full sm:w-auto px-6 py-3.5 bg-slate-800 hover:bg-slate-700 font-semibold rounded-2xl text-amber-300 border border-amber-500/30 transition text-sm">
+          🏆 Papan Markah
+        </button>
+      </div>
+
+      <div class="mt-4 text-[11px] text-slate-500">
+        *Boleh juga dimainkan menggunakan tetikus / skrin sentuh secara seretan jika kamera tidak diaktifkan.
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: MOD GURU / TETAPAN (TEACHER MODE) -->
+  <div id="modal-teacher" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="max-w-xl w-full glass-panel p-6 rounded-3xl border border-purple-500/40 shadow-2xl relative">
+      <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
+        <h2 class="text-xl font-bold font-outfit text-purple-300 flex items-center">
+          ⚙️ Mod Guru & Panel Tetapan
+        </h2>
+        <button id="btn-close-teacher" class="text-slate-400 hover:text-white text-xl font-bold p-1">✕</button>
+      </div>
+
+      <div class="space-y-4 text-xs">
+        <!-- Masa Permainan -->
+        <div class="flex justify-between items-center bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+          <div>
+            <div class="font-semibold text-white">Masa Permainan (Saat)</div>
+            <div class="text-[10px] text-slate-400">Tempoh masa untuk menjawab soalan.</div>
+          </div>
+          <input type="number" id="setting-time" min="30" max="300" step="10" value="120" class="w-20 bg-slate-800 border border-purple-500/50 rounded-lg px-2 py-1 text-center font-bold text-purple-300 focus:outline-none" />
+        </div>
+
+        <!-- Kepekaan Cubitan AI -->
+        <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-semibold text-white">Kepekaan Cubitan AI (Pinch Sensitivity)</span>
+            <span id="val-sensitivity" class="font-mono text-cyan-400">0.065</span>
+          </div>
+          <input type="range" id="setting-sensitivity" min="0.03" max="0.12" step="0.005" value="0.065" class="w-full accent-cyan-400 cursor-pointer" />
+          <div class="flex justify-between text-[9px] text-slate-500 mt-0.5">
+            <span>Lebih Ketat (Jari Sangat Rapat)</span>
+            <span>Lebih Longgar</span>
+          </div>
+        </div>
+
+        <!-- Kelajuan Kad Terapung -->
+        <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-semibold text-white">Kelajuan Kad Terapung</span>
+            <span id="val-card-speed" class="font-mono text-amber-400">1.0x</span>
+          </div>
+          <input type="range" id="setting-card-speed" min="0.2" max="3.0" step="0.2" value="1.0" class="w-full accent-amber-400 cursor-pointer" />
+        </div>
+
+        <!-- Markah & Penalti -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+            <label class="block font-semibold text-emerald-400 mb-1">Markah Jawapan Betul</label>
+            <input type="number" id="setting-score-add" min="5" max="50" value="10" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-center font-bold text-emerald-300" />
+          </div>
+          <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+            <label class="block font-semibold text-rose-400 mb-1">Penalti Jawapan Salah</label>
+            <input type="number" id="setting-score-sub" min="0" max="20" value="3" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-center font-bold text-rose-300" />
+          </div>
+        </div>
+
+        <!-- Suis Togol -->
+        <div class="grid grid-cols-2 gap-3">
+          <label class="flex items-center space-x-2 bg-slate-900/60 p-3 rounded-xl border border-slate-800 cursor-pointer">
+            <input type="checkbox" id="setting-show-skeleton" checked class="rounded accent-cyan-400 w-4 h-4" />
+            <span class="text-slate-200">Paparkan Rangka AI</span>
+          </label>
+          <label class="flex items-center space-x-2 bg-slate-900/60 p-3 rounded-xl border border-slate-800 cursor-pointer">
+            <input type="checkbox" id="setting-sound" checked class="rounded accent-cyan-400 w-4 h-4" />
+            <span class="text-slate-200">Kesan Audio Web</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Footer Buttons -->
+      <div class="flex justify-between items-center mt-6 pt-3 border-t border-slate-800">
+        <button id="btn-reset-settings" class="text-slate-400 hover:text-rose-400 text-xs underline font-medium">
+          Pulihkan Tetapan Asal
+        </button>
+        <button id="btn-save-teacher" class="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition text-xs uppercase tracking-wider">
+          Simpan & Tutup
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 3: PAPAN MARKAH (LEADERBOARD) -->
+  <div id="modal-leaderboard" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="max-w-lg w-full glass-panel p-6 rounded-3xl border border-amber-500/40 shadow-2xl relative">
+      <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
+        <h2 class="text-xl font-bold font-outfit text-amber-300 flex items-center">
+          🏆 Papan Markah (Top 10)
+        </h2>
+        <button id="btn-close-leaderboard" class="text-slate-400 hover:text-white text-xl font-bold p-1">✕</button>
+      </div>
+
+      <div class="overflow-y-auto max-h-64 rounded-xl border border-slate-800 mb-4">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-900/90 text-slate-400 uppercase tracking-wider sticky top-0">
+            <tr>
+              <th class="p-2.5">#</th>
+              <th class="p-2.5">Nama Pemain</th>
+              <th class="p-2.5 text-center">Skor</th>
+              <th class="p-2.5 text-center">Ketepatan</th>
+              <th class="p-2.5 text-right">Tarikh</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboard-table-body" class="divide-y divide-slate-800/60 text-slate-200 font-medium">
+            <!-- Dynamic rows inserted via JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex justify-between items-center text-[10px] text-slate-500">
+        <span>* Rekod disimpan secara tempatan pada pelayar ini.</span>
+        <button id="btn-clear-leaderboard" class="text-rose-400 hover:underline">Padam Rekod</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 4: HINT / PETUNJUK TATABAHASA -->
+  <div id="modal-hint" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="max-w-md w-full glass-panel p-6 rounded-3xl border border-cyan-500/40 shadow-2xl relative text-xs">
+      <div class="flex justify-between items-center mb-3 border-b border-slate-800 pb-2">
+        <h3 class="text-base font-bold font-outfit text-cyan-300">💡 Panduan Tatabahasa Kata Kerja</h3>
+        <button id="btn-close-hint" class="text-slate-400 hover:text-white font-bold text-lg">✕</button>
+      </div>
+      <div class="space-y-3 text-slate-300">
+        <div class="bg-cyan-950/40 p-3 rounded-xl border border-cyan-500/30">
+          <span class="font-bold text-cyan-300 text-sm block mb-1">1. Kata Kerja Transitif</span>
+          <p>Kata kerja yang <strong>mesti diikuti oleh objek</strong> (kata nama atau frasa nama) untuk melengkapkan maksud ayat.</p>
+          <p class="mt-1 text-cyan-200 italic">Contoh: Aina <u>membaca</u> <strong>buku cerita</strong>.</p>
+        </div>
+        <div class="bg-purple-950/40 p-3 rounded-xl border border-purple-500/30">
+          <span class="font-bold text-purple-300 text-sm block mb-1">2. Kata Kerja Tak Transitif</span>
+          <p>Kata kerja yang <strong>tidak memerlukan objek</strong>. Boleh berdiri sendiri atau diikuti pelengkap/keterangan.</p>
+          <p class="mt-1 text-purple-200 italic">Contoh: Adik <u>tidur</u> <i>di bilik</i>. ('di bilik' ialah keterangan tempat, bukan objek).</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 5: SKRIN KEPUTUSAN AKHIR (GAME OVER) -->
+  <div id="modal-result" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4 hidden">
+    <div class="max-w-lg w-full glass-panel p-8 rounded-3xl border border-amber-500/50 shadow-2xl text-center relative">
+      <div class="inline-block px-4 py-1 rounded-full bg-amber-500/20 text-amber-300 font-bold text-xs uppercase tracking-wider mb-2">
+        Misi Selesai!
+      </div>
+      <h2 class="text-3xl font-black font-outfit text-white mb-1">KEPUTUSAN PENGEMBARAAN</h2>
+      <p id="result-badge" class="text-sm font-bold text-cyan-400 mb-6">Gelar: Pahlawan Bahasa Melayu</p>
+
+      <!-- Stats Grid -->
+      <div class="grid grid-cols-2 gap-3 mb-6 text-left">
+        <div class="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+          <div class="text-[10px] text-slate-400 uppercase font-bold">Skor Akhir</div>
+          <div id="result-score" class="font-outfit text-2xl font-black text-amber-300">0</div>
+        </div>
+        <div class="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+          <div class="text-[10px] text-slate-400 uppercase font-bold">Peratus Ketepatan</div>
+          <div id="result-accuracy" class="font-outfit text-2xl font-black text-emerald-300">0%</div>
+        </div>
+        <div class="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+          <div class="text-[10px] text-slate-400 uppercase font-bold">Padanan Betul / Salah</div>
+          <div id="result-match-count" class="font-outfit text-lg font-bold text-slate-200">0 / 0</div>
+        </div>
+        <div class="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+          <div class="text-[10px] text-slate-400 uppercase font-bold">Masa Diambil</div>
+          <div id="result-time-spent" class="font-outfit text-lg font-bold text-cyan-300">00:00</div>
+        </div>
+      </div>
+
+      <!-- Save Score Input -->
+      <div class="mb-6">
+        <label class="block text-xs font-semibold text-slate-300 mb-1 text-left">Masukkan Nama Pemain:</label>
+        <div class="flex space-x-2">
+          <input type="text" id="player-name-input" maxlength="20" placeholder="Nama Murid..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-400" />
+          <button id="btn-save-score" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs uppercase tracking-wider transition">
+            Simpan
+          </button>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex space-x-3">
+        <button id="btn-restart-game" class="flex-1 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 font-bold rounded-2xl text-white text-xs uppercase tracking-wider shadow-lg transition">
+          🔄 Main Semula
+        </button>
+        <button id="btn-main-menu" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 font-semibold rounded-2xl text-slate-300 text-xs uppercase tracking-wider transition">
+          🏠 Menu Utama
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CUSTOM CONFIRMATION MODAL -->
+  <div id="modal-confirm" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+    <div class="max-w-sm w-full glass-panel p-5 rounded-2xl border border-rose-500/40 text-center">
+      <h3 class="text-base font-bold text-white mb-2">Pengesahan</h3>
+      <p id="confirm-msg" class="text-xs text-slate-300 mb-4">Adakah anda pasti untuk memadam semua rekod papan markah?</p>
+      <div class="flex justify-center space-x-3">
+        <button id="btn-confirm-cancel" class="px-4 py-1.5 bg-slate-800 text-slate-300 rounded-xl text-xs font-medium">Batal</button>
+        <button id="btn-confirm-ok" class="px-4 py-1.5 bg-rose-600 text-white rounded-xl text-xs font-bold">Ya, Padam</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ==========================================================================
+       1. DATA SET KATA KERJA BAHASA MELAYU TINGKATAN 3
+       ========================================================================== */
+    const VERB_DATA = [
+      { id: 1, text: "membaca buku", category: "transitive", categoryLabel: "Kata Kerja Transitif", sentence: "Aina membaca buku cerita.", explanation: "Memerlukan objek 'buku cerita' selepas kata kerja 'membaca'.", color: "#06B6D4" },
+      { id: 2, text: "menendang bola", category: "transitive", categoryLabel: "Kata Kerja Transitif", sentence: "Amir menendang bola itu.", explanation: "Memerlukan objek 'bola itu' untuk menerima tindakan menendang.", color: "#10B981" },
+      { id: 3, text: "memasak nasi", category: "transitive", categoryLabel: "Kata Kerja Transitif", sentence: "Ibu memasak nasi.", explanation: "Kata kerja 'memasak' memerlukan objek terus iaitu 'nasi'.", color: "#F59E0B" },
+      { id: 4, text: "menulis surat", category: "transitive", categoryLabel: "Kata Kerja Transitif", sentence: "Farah menulis surat kepada rakannya.", explanation: "Mempunyai objek 'surat' yang menerima tindakan 'menulis'.", color: "#EC4899" },
+      { id: 5, text: "mengangkat kotak", category: "transitive", categoryLabel: "Kata Kerja Transitif", sentence: "Pekerja itu mengangkat kotak.", explanation: "Memerlukan objek 'kotak' untuk melengkapkan maksud ayat.", color: "#8B5CF6" },
+      { id: 6, text: "tidur", category: "intransitive", categoryLabel: "Kata Kerja Tak Transitif", sentence: "Adik tidur di bilik.", explanation: "Boleh berdiri sendiri tanpa objek ('di bilik' ialah frasa keterangan tempat).", color: "#14B8A6" },
+      { id: 7, text: "berlari", category: "intransitive", categoryLabel: "Kata Kerja Tak Transitif", sentence: "Murid-murid berlari di padang.", explanation: "Tidak memerlukan objek ('di padang' ialah frasa keterangan lokasi).", color: "#F97316" },
+      { id: 8, text: "tersenyum", category: "intransitive", categoryLabel: "Kata Kerja Tak Transitif", sentence: "Kakak tersenyum kepada adik.", explanation: "Mempunyai maksud sempurna tanpa memerlukan objek direct.", color: "#E11D48" },
+      { id: 9, text: "berenang", category: "intransitive", categoryLabel: "Kata Kerja Tak Transitif", sentence: "Hakim berenang di kolam.", explanation: "Frasa 'di kolam' berfungsi sebagai keterangan, bukan objek.", color: "#0284C7" },
+      { id: 10, text: "menangis", category: "intransitive", categoryLabel: "Kata Kerja Tak Transitif", sentence: "Bayi itu menangis pada waktu malam.", explanation: "Tidak memerlukan objek ('pada waktu malam' ialah keterangan masa).", color: "#A855F7" }
+    ];
+
+    /* ==========================================================================
+       2. TEACHER PARAMETERS & GAME CONFIGURATION
+       ========================================================================== */
+    let gameSettings = {
+      gameTimeSeconds: 120,
+      pinchThreshold: 0.065,
+      cardSpeedMultiplier: 1.0,
+      scorePerCorrect: 10,
+      scorePenaltyWrong: 3,
+      showSkeleton: true,
+      soundEnabled: true
+    };
+
+    /* ==========================================================================
+       3. NESTED STATE MANAGEMENT
+       ========================================================================== */
+    let gameState = {
+      isPlaying: false,
+      score: 0,
+      matchedCount: 0,
+      wrongAttempts: 0,
+      totalAttempts: 0,
+      timeRemaining: 120,
+      timerInterval: null,
+      startTime: 0,
+      endTime: 0,
+      activeCards3D: [],
+      heldCard: null,
+      handPos2D: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+      handPos3D: new THREE.Vector3(),
+      isPinching: false,
+      wasPinching: false,
+      handDetected: false,
+      fps: 0,
+      frameCount: 0,
+      lastFpsUpdate: performance.now(),
+      landmarkData: null,
+      mouseDragging: false,
+      availableVerbs: []
+    };
+
+    /* ==========================================================================
+       4. WEB AUDIO SYNTHESIZER (NO EXTERNAL MP3 DEPENDENCY)
+       ========================================================================== */
+    let audioCtx = null;
+    function initAudio() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function playSound(type) {
+      if (!gameSettings.soundEnabled) return;
+      initAudio();
+      if (!audioCtx) return;
+
+      const now = audioCtx.currentTime;
+
+      if (type === 'grab') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(350, now);
+        osc.frequency.exponentialRampToValueAtTime(750, now + 0.08);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+        osc.start(now);
+        osc.stop(now + 0.08);
+      } else if (type === 'correct') {
+        const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+        notes.forEach((freq, idx) => {
+          const o = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          o.connect(g);
+          g.connect(audioCtx.destination);
+          o.type = 'triangle';
+          o.frequency.value = freq;
+          g.gain.setValueAtTime(0.15, now + idx * 0.08);
+          g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.3);
+          o.start(now + idx * 0.08);
+          o.stop(now + idx * 0.08 + 0.3);
+        });
+      } else if (type === 'wrong') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.linearRampToValueAtTime(110, now + 0.25);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      } else if (type === 'click') {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, now);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.05);
+        osc.start(now);
+        osc.stop(now + 0.05);
+      } else if (type === 'win') {
+        const winNotes = [440, 554.37, 659.25, 880];
+        winNotes.forEach((freq, idx) => {
+          const o = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          o.connect(g);
+          g.connect(audioCtx.destination);
+          o.type = 'sine';
+          o.frequency.value = freq;
+          g.gain.setValueAtTime(0.2, now + idx * 0.12);
+          g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.12 + 0.5);
+          o.start(now + idx * 0.12);
+          o.stop(now + idx * 0.12 + 0.5);
+        });
+      }
+    }
+
+    /* ==========================================================================
+       5. THREE.JS 3D ARENA & FLOATING CARD ENGINE
+       ========================================================================== */
+    let scene, camera, renderer;
+    let zoneLeftGroup, zoneRightGroup;
+    let particleSystem, particleGeometry, particlePositions, particleVelocities;
+    const PARTICLE_COUNT = 80;
+
+    function init3D() {
+      const container = document.getElementById('three-canvas');
+      scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x090d16, 0.035);
+
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 0, 11);
+
+      renderer = new THREE.WebGLRenderer({ canvas: container, antialias: true, alpha: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0x06b6d4, 1.2);
+      dirLight.position.set(5, 10, 7);
+      scene.add(dirLight);
+
+      const pointLight = new THREE.PointLight(0xa855f7, 1.5, 25);
+      pointLight.position.set(-5, -5, 5);
+      scene.add(pointLight);
+
+      // Create Drop Zones at Left & Right top
+      createDropZones3D();
+
+      // Particle System
+      initParticleSystem();
+
+      window.addEventListener('resize', onWindowResize);
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      repositionDropZones3D();
+    }
+
+    function createDropZones3D() {
+      // Left Zone - Kata Kerja Transitif (Cyan)
+      zoneLeftGroup = createZoneMesh("KATA KERJA TRANSITIF", "(Memerlukan Objek)", 0x06b6d4);
+      scene.add(zoneLeftGroup);
+
+      // Right Zone - Kata Kerja Tak Transitif (Purple)
+      zoneRightGroup = createZoneMesh("KATA KERJA TAK TRANSITIF", "(Tanpa Objek Direct)", 0xa855f7);
+      scene.add(zoneRightGroup);
+
+      repositionDropZones3D();
+    }
+
+    function repositionDropZones3D() {
+      // Place relative to screen width/aspect
+      const aspect = window.innerWidth / window.innerHeight;
+      const xOffset = aspect > 1.2 ? 4.2 : 2.5;
+      const yPos = 3.8;
+
+      if (zoneLeftGroup) zoneLeftGroup.position.set(-xOffset, yPos, 0);
+      if (zoneRightGroup) zoneRightGroup.position.set(xOffset, yPos, 0);
+    }
+
+    function createZoneMesh(title, subtitle, glowHex) {
+      const group = new THREE.Group();
+
+      // Outer Glow Box
+      const width = 3.6;
+      const height = 1.8;
+      const geometry = new THREE.PlaneGeometry(width, height);
+      
+      // Dynamic Canvas Texture for Zone Title
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+
+      // Rounded rectangle background
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.strokeStyle = '#' + glowHex.toString(16).padStart(6, '0');
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.roundRect(10, 10, 492, 236, 24);
+      ctx.fill();
+      ctx.stroke();
+
+      // Text
+      ctx.fillStyle = '#' + glowHex.toString(16).padStart(6, '0');
+      ctx.font = 'bold 34px Outfit, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(title, 256, 110);
+
+      ctx.fillStyle = '#CBD5E1';
+      ctx.font = '22px Poppins, sans-serif';
+      ctx.fillText(subtitle, 256, 160);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        side: THREE.DoubleSide
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      group.add(mesh);
+
+      group.userData = { title, glowHex, width, height };
+      return group;
+    }
+
+    function initParticleSystem() {
+      particleGeometry = new THREE.BufferGeometry();
+      particlePositions = new Float32Array(PARTICLE_COUNT * 3);
+      particleVelocities = [];
+
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        particlePositions[i * 3] = 0;
+        particlePositions[i * 3 + 1] = 0;
+        particlePositions[i * 3 + 2] = -50; // Hidden initially
+        particleVelocities.push(new THREE.Vector3());
+      }
+
+      particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+
+      const particleMaterial = new THREE.PointsMaterial({
+        color: 0x38bdf8,
+        size: 0.25,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending
+      });
+
+      particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+      scene.add(particleSystem);
+    }
+
+    function triggerParticleBurst(pos3D, hexColor) {
+      if (particleSystem) particleSystem.material.color.setHex(hexColor);
+      const positions = particleGeometry.attributes.position.array;
+
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        positions[i * 3] = pos3D.x;
+        positions[i * 3 + 1] = pos3D.y;
+        positions[i * 3 + 2] = pos3D.z;
+
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI;
+        const speed = 0.08 + Math.random() * 0.12;
+
+        particleVelocities[i].set(
+          Math.sin(phi) * Math.cos(theta) * speed,
+          Math.sin(phi) * Math.sin(theta) * speed,
+          Math.cos(phi) * speed
+        );
+      }
+      particleGeometry.attributes.position.needsUpdate = true;
+    }
+
+    function updateParticles() {
+      if (!particleSystem) return;
+      const positions = particleGeometry.attributes.position.array;
+
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        if (positions[i * 3 + 2] > -40) {
+          positions[i * 3] += particleVelocities[i].x;
+          positions[i * 3 + 1] += particleVelocities[i].y;
+          positions[i * 3 + 2] += particleVelocities[i].z;
+          particleVelocities[i].y -= 0.003; // Gravity
+        }
+      }
+      particleGeometry.attributes.position.needsUpdate = true;
+    }
+
+    function create3DCardMesh(verbObj) {
+      const group = new THREE.Group();
+      const width = 3.2;
+      const height = 1.6;
+      const geometry = new THREE.PlaneGeometry(width, height);
+
+      // Create Canvas Texture
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+
+      // Card Background Gradient
+      const grad = ctx.createLinearGradient(0, 0, 512, 256);
+      grad.addColorStop(0, '#0F172A');
+      grad.addColorStop(1, '#1E293B');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.roundRect(10, 10, 492, 236, 28);
+      ctx.fill();
+
+      // Border Glow
+      ctx.lineWidth = 12;
+      ctx.strokeStyle = verbObj.color;
+      ctx.stroke();
+
+      // Card Header Tag
+      ctx.fillStyle = verbObj.color;
+      ctx.font = 'bold 20px Outfit, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('KATA KERJA', 256, 60);
+
+      // Main Verb Text
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 36px Poppins, sans-serif';
+      ctx.fillText(verbObj.text, 256, 130);
+
+      // Subtitle Instructions
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '18px Nunito, sans-serif';
+      ctx.fillText('Cubit & bawa ke zon jawapan', 256, 185);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      const material = new THREE.MeshStandardMaterial({
+        map: texture,
+        roughness: 0.2,
+        metalness: 0.1,
+        transparent: true,
+        side: THREE.DoubleSide
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      group.add(mesh);
+
+      // Floating Physics Data
+      group.userData = {
+        verbData: verbObj,
+        initialPos: new THREE.Vector3(),
+        velocity: new THREE.Vector3(
+          (Math.random() - 0.5) * 0.012,
+          (Math.random() - 0.5) * 0.012,
+          0
+        ),
+        floatOffset: Math.random() * Math.PI * 2,
+        isHeld: false,
+        width,
+        height
+      };
+
+      return group;
+    }
+
+    function convert2DTo3DWorld(x2d, y2d) {
+      const vector = new THREE.Vector3(
+        (x2d / window.innerWidth) * 2 - 1,
+        -(y2d / window.innerHeight) * 2 + 1,
+        0.5
+      );
+      vector.unproject(camera);
+      const dir = vector.sub(camera.position).normalize();
+      const distance = -camera.position.z / dir.z;
+      const pos = camera.position.clone().add(dir.multiplyScalar(distance));
+      return pos;
+    }
+
+    /* ==========================================================================
+       6. MEDIAPIPE HAND TRACKING & CAMERA ENGINE
+       ========================================================================== */
+    let handsInstance = null;
+    let cameraUtilsInstance = null;
+
+    function initHandTracking() {
+      const videoElement = document.getElementById('webcam-video');
+      const pipVideo = document.getElementById('pip-video');
+
+      handsInstance = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+
+      handsInstance.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.65,
+        minTrackingConfidence: 0.65
+      });
+
+      handsInstance.onResults(onHandResults);
+
+      cameraUtilsInstance = new Camera(videoElement, {
+        onFrame: async () => {
+          if (videoElement) await handsInstance.send({ image: videoElement });
+        },
+        width: 640,
+        height: 480
+      });
+
+      cameraUtilsInstance.start().then(() => {
+        // Stream to PiP Video
+        if (videoElement.srcObject) {
+          pipVideo.srcObject = videoElement.srcObject;
+        }
+        document.getElementById('hand-status-badge').innerText = 'KAMERA AKTIF';
+      }).catch((err) => {
+        console.warn('Webcam permission denied or error:', err);
+        document.getElementById('hand-status-badge').innerText = 'MOD TETIKUS (Kamera Tiada)';
+      });
+    }
+
+    function onHandResults(results) {
+      // Calculate FPS
+      gameState.frameCount++;
+      const now = performance.now();
+      if (now - gameState.lastFpsUpdate >= 1000) {
+        gameState.fps = gameState.frameCount;
+        gameState.frameCount = 0;
+        gameState.lastFpsUpdate = now;
+        document.getElementById('cam-fps').innerText = `${gameState.fps} FPS`;
+      }
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        gameState.handDetected = true;
+        document.getElementById('hand-status-badge').innerText = 'TANGAN DIKESAN';
+        document.getElementById('hand-status-badge').className = 'absolute bottom-1 left-1 right-1 bg-emerald-950/90 text-[9px] text-center py-0.5 rounded text-emerald-300 font-mono border border-emerald-500/30';
+
+        const landmarks = results.multiHandLandmarks[0];
+        gameState.landmarkData = landmarks;
+
+        // Landmark 8: Index Finger Tip, Landmark 4: Thumb Tip
+        const indexTip = landmarks[8];
+        const thumbTip = landmarks[4];
+
+        // Mirrored X Coordinate
+        const screenX = (1 - indexTip.x) * window.innerWidth;
+        const screenY = indexTip.y * window.innerHeight;
+
+        // Smooth Lerp Position
+        gameState.handPos2D.x += (screenX - gameState.handPos2D.x) * 0.45;
+        gameState.handPos2D.y += (screenY - gameState.handPos2D.y) * 0.45;
+
+        // Convert to 3D World Space
+        gameState.handPos3D = convert2DTo3DWorld(gameState.handPos2D.x, gameState.handPos2D.y);
+
+        // Euclidean distance for Pinch Detection
+        const dx = indexTip.x - thumbTip.x;
+        const dy = indexTip.y - thumbTip.y;
+        const dz = indexTip.z - thumbTip.z;
+        const pinchDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+        gameState.isPinching = pinchDistance < gameSettings.pinchThreshold;
+
+        // UI Indicator
+        document.getElementById('gesture-indicator').innerText = gameState.isPinching ? '👌 CUBITAN' : '🖐️ JARI TERBUKA';
+        document.getElementById('gesture-indicator').className = gameState.isPinching ? 'text-amber-400 font-bold' : 'text-slate-400';
+
+      } else {
+        gameState.handDetected = false;
+        document.getElementById('hand-status-badge').innerText = 'MENUNGGU TANGAN...';
+        document.getElementById('hand-status-badge').className = 'absolute bottom-1 left-1 right-1 bg-slate-900/90 text-[9px] text-center py-0.5 rounded text-cyan-300 font-mono border border-cyan-500/30';
+        document.getElementById('gesture-indicator').innerText = 'Jari Terbuka';
+      }
+    }
+
+    /* ==========================================================================
+       7. 2D OVERLAY CANVAS DRAWING (SKELETON & CURSOR)
+       ========================================================================== */
+    function drawHandOverlay() {
+      const canvas = document.getElementById('hand-canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw Hand Skeleton if enabled & detected
+      if (gameSettings.showSkeleton && gameState.handDetected && gameState.landmarkData) {
+        const landmarks = gameState.landmarkData;
+        const connections = [
+          [0,1],[1,2],[2,3],[3,4], // Thumb
+          [0,5],[5,6],[6,7],[7,8], // Index
+          [5,9],[9,10],[10,11],[11,12], // Middle
+          [9,13],[13,14],[14,15],[15,16], // Ring
+          [13,17],[17,18],[18,19],[19,20],[0,17] // Pinky & Palm
+        ];
+
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = gameState.isPinching ? 'rgba(245, 158, 11, 0.7)' : 'rgba(6, 182, 212, 0.5)';
+
+        connections.forEach(([i, j]) => {
+          const x1 = (1 - landmarks[i].x) * canvas.width;
+          const y1 = landmarks[i].y * canvas.height;
+          const x2 = (1 - landmarks[j].x) * canvas.width;
+          const y2 = landmarks[j].y * canvas.height;
+
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+        });
+
+        // Joints
+        landmarks.forEach((lm) => {
+          const x = (1 - lm.x) * canvas.width;
+          const y = lm.y * canvas.height;
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath();
+          ctx.arc(x, y, 4, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      // Draw Futuristic Cursor Ring at Hand Position
+      if (gameState.handDetected || gameState.mouseDragging) {
+        const x = gameState.handPos2D.x;
+        const y = gameState.handPos2D.y;
+
+        ctx.save();
+        ctx.translate(x, y);
+
+        // Pulsing Ring
+        const ringSize = gameState.isPinching ? 18 : 28;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = gameState.isPinching ? '#f59e0b' : '#06b6d4';
+        ctx.shadowColor = gameState.isPinching ? '#f59e0b' : '#06b6d4';
+        ctx.shadowBlur = 15;
+
+        ctx.beginPath();
+        ctx.arc(0, 0, ringSize, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Inner Dot
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(0, 0, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    /* ==========================================================================
+       8. MOUSE & TOUCH FALLBACK CONTROLS
+       ========================================================================== */
+    function initMouseTouchFallback() {
+      const canvas = document.getElementById('hand-canvas');
+
+      const handlePointerDown = (e) => {
+        if (!gameState.isPlaying) return;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        gameState.mouseDragging = true;
+        gameState.handPos2D.x = clientX;
+        gameState.handPos2D.y = clientY;
+        gameState.handPos3D = convert2DTo3DWorld(clientX, clientY);
+        gameState.isPinching = true;
+      };
+
+      const handlePointerMove = (e) => {
+        if (!gameState.mouseDragging || !gameState.isPlaying) return;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        gameState.handPos2D.x = clientX;
+        gameState.handPos2D.y = clientY;
+        gameState.handPos3D = convert2DTo3DWorld(clientX, clientY);
+      };
+
+      const handlePointerUp = () => {
+        if (gameState.mouseDragging) {
+          gameState.mouseDragging = false;
+          gameState.isPinching = false;
+        }
+      };
+
+      canvas.addEventListener('mousedown', handlePointerDown);
+      canvas.addEventListener('mousemove', handlePointerMove);
+      window.addEventListener('mouseup', handlePointerUp);
+
+      canvas.addEventListener('touchstart', handlePointerDown, { passive: true });
+      canvas.addEventListener('touchmove', handlePointerMove, { passive: true });
+      window.addEventListener('touchend', handlePointerUp);
+    }
+
+    /* ==========================================================================
+       9. GAME MECHANICS & CARD SPAWNING LOGIC
+       ========================================================================== */
+    function startNewGame() {
+      gameState.isPlaying = true;
+      gameState.score = 0;
+      gameState.matchedCount = 0;
+      gameState.wrongAttempts = 0;
+      gameState.totalAttempts = 0;
+      gameState.timeRemaining = gameSettings.gameTimeSeconds;
+      gameState.startTime = Date.now();
+      gameState.heldCard = null;
+
+      // Reset Card Deck
+      gameState.availableVerbs = [...VERB_DATA];
+      shuffleArray(gameState.availableVerbs);
+
+      // Clear existing 3D cards
+      gameState.activeCards3D.forEach(card => scene.remove(card));
+      gameState.activeCards3D = [];
+
+      // Update HUD
+      updateHUD();
+
+      // Hide Start Modal
+      document.getElementById('modal-start').classList.add('hidden');
+      document.getElementById('modal-result').classList.add('hidden');
+      document.getElementById('game-hud').classList.remove('opacity-0');
+      document.getElementById('camera-panel').classList.remove('opacity-0');
+
+      // Start Timer
+      if (gameState.timerInterval) clearInterval(gameState.timerInterval);
+      gameState.timerInterval = setInterval(gameTimerTick, 1000);
+
+      // Spawn initial batch of 3 floating cards
+      spawnActiveCardBatch();
+    }
+
+    function shuffleArray(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+    }
+
+    function spawnActiveCardBatch() {
+      while (gameState.activeCards3D.length < 3 && gameState.availableVerbs.length > 0) {
+        const verbObj = gameState.availableVerbs.pop();
+        const cardMesh = create3DCardMesh(verbObj);
+
+        // Spawn position in floating arena
+        const spawnX = (Math.random() - 0.5) * 5;
+        const spawnY = -1.5 + (Math.random() - 0.5) * 2;
+        cardMesh.position.set(spawnX, spawnY, 0);
+        cardMesh.userData.initialPos.copy(cardMesh.position);
+
+        scene.add(cardMesh);
+        gameState.activeCards3D.push(cardMesh);
+      }
+    }
+
+    function gameTimerTick() {
+      if (!gameState.isPlaying) return;
+
+      gameState.timeRemaining--;
+      updateHUD();
+
+      if (gameState.timeRemaining <= 0) {
+        endGame(false);
+      }
+    }
+
+    function updateHUD() {
+      document.getElementById('hud-score').innerText = gameState.score;
+      
+      const mins = Math.floor(gameState.timeRemaining / 60);
+      const secs = gameState.timeRemaining % 60;
+      document.getElementById('hud-timer').innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+      
+      document.getElementById('hud-progress').innerText = `${gameState.matchedCount} / 10`;
+    }
+
+    function updateGameLoop() {
+      if (gameState.isPlaying) {
+        // Floating physics for unheld active cards
+        gameState.activeCards3D.forEach(card => {
+          if (!card.userData.isHeld) {
+            card.userData.floatOffset += 0.03 * gameSettings.cardSpeedMultiplier;
+            card.position.y = card.userData.initialPos.y + Math.sin(card.userData.floatOffset) * 0.25;
+            card.rotation.z = Math.sin(card.userData.floatOffset * 0.5) * 0.05;
+          }
+        });
+
+        // Handle Pinch Grab Logic
+        if (gameState.isPinching && !gameState.wasPinching) {
+          // Pinch Started -> Try to grab nearest card
+          let closestCard = null;
+          let minDistance = 1.8; // Grab radius in 3D
+
+          gameState.activeCards3D.forEach(card => {
+            const dist = gameState.handPos3D.distanceTo(card.position);
+            if (dist < minDistance) {
+              minDistance = dist;
+              closestCard = card;
+            }
+          });
+
+          if (closestCard) {
+            gameState.heldCard = closestCard;
+            closestCard.userData.isHeld = true;
+            playSound('grab');
+          }
+        }
+
+        // Update Position of Held Card
+        if (gameState.heldCard && gameState.isPinching) {
+          gameState.heldCard.position.x += (gameState.handPos3D.x - gameState.heldCard.position.x) * 0.35;
+          gameState.heldCard.position.y += (gameState.handPos3D.y - gameState.heldCard.position.y) * 0.35;
+          gameState.heldCard.rotation.z = (gameState.handPos3D.x - gameState.heldCard.position.x) * 0.2;
+        }
+
+        // Handle Pinch Release Logic
+        if (!gameState.isPinching && gameState.wasPinching && gameState.heldCard) {
+          checkCardDropZone(gameState.heldCard);
+          gameState.heldCard.userData.isHeld = false;
+          gameState.heldCard = null;
+        }
+
+        gameState.wasPinching = gameState.isPinching;
+      }
+
+      updateParticles();
+    }
+
+    function checkCardDropZone(card) {
+      const pos = card.position;
+
+      // Check collision with Left Zone (Transitive)
+      const distLeft = pos.distanceTo(zoneLeftGroup.position);
+      // Check collision with Right Zone (Intransitive)
+      const distRight = pos.distanceTo(zoneRightGroup.position);
+
+      const dropThreshold = 2.2;
+
+      if (distLeft < dropThreshold) {
+        verifyAnswer(card, "transitive", zoneLeftGroup.position, 0x06b6d4);
+      } else if (distRight < dropThreshold) {
+        verifyAnswer(card, "intransitive", zoneRightGroup.position, 0xa855f7);
+      } else {
+        // Returned to arena
+        card.userData.initialPos.copy(card.position);
+      }
+    }
+
+    function verifyAnswer(card, chosenCategory, zonePos, hexColor) {
+      const verbObj = card.userData.verbData;
+      gameState.totalAttempts++;
+
+      if (verbObj.category === chosenCategory) {
+        // CORRECT ANSWER!
+        gameState.score += gameSettings.scorePerCorrect;
+        gameState.matchedCount++;
+        playSound('correct');
+        triggerParticleBurst(zonePos, hexColor);
+
+        showToast(
+          `✅ BETUL! "${verbObj.text.toUpperCase()}"`,
+          `${verbObj.sentence} (${verbObj.explanation})`,
+          'border-emerald-500/50 bg-slate-900/90 text-emerald-300'
+        );
+
+        // Remove card from 3D scene
+        scene.remove(card);
+        gameState.activeCards3D = gameState.activeCards3D.filter(c => c !== card);
+
+        updateHUD();
+
+        // Check Win condition
+        if (gameState.matchedCount >= 10) {
+          endGame(true);
+        } else {
+          // Refill active cards
+          spawnActiveCardBatch();
+        }
+
+      } else {
+        // WRONG ANSWER!
+        gameState.score = Math.max(0, gameState.score - gameSettings.scorePenaltyWrong);
+        gameState.wrongAttempts++;
+        playSound('wrong');
+
+        showToast(
+          `❌ KURANG TEPAT! "${verbObj.text.toUpperCase()}"`,
+          `Sebab: ${verbObj.explanation}`,
+          'border-rose-500/50 bg-slate-900/90 text-rose-300'
+        );
+
+        // Shake back to center
+        card.position.set((Math.random() - 0.5) * 3, -1.5, 0);
+        card.userData.initialPos.copy(card.position);
+
+        updateHUD();
+      }
+    }
+
+    function showToast(title, msg, styleClasses) {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `glass-panel p-3.5 rounded-2xl border shadow-2xl animate-toast text-left w-full pointer-events-auto ${styleClasses}`;
+      toast.innerHTML = `
+        <div class="font-bold text-sm mb-0.5 font-outfit">${title}</div>
+        <div class="text-xs text-slate-200 font-medium">${msg}</div>
+      `;
+
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
+    }
+
+    /* ==========================================================================
+       10. GAME OVER & RESULTS CALCULATION
+       ========================================================================== */
+    function endGame(isVictory) {
+      gameState.isPlaying = false;
+      gameState.endTime = Date.now();
+      if (gameState.timerInterval) clearInterval(gameState.timerInterval);
+
+      playSound(isVictory ? 'win' : 'click');
+
+      const timeSpentSecs = Math.floor((gameState.endTime - gameState.startTime) / 1000);
+      const mins = Math.floor(timeSpentSecs / 60);
+      const secs = timeSpentSecs % 60;
+      const timeFormatted = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+      const accuracy = gameState.totalAttempts > 0 
+        ? Math.round((gameState.matchedCount / gameState.totalAttempts) * 100) 
+        : 0;
+
+      // Assign Rank Badge
+      let rankBadge = 'Pahlawan Muda Tatabahasa';
+      if (accuracy >= 90 && gameState.score >= 90) rankBadge = '👑 Munsyi Dewan Bahasa (Cemerlang)';
+      else if (accuracy >= 75) rankBadge = '⚔️ Pakar Kata Kerja (Puji)';
+      else if (accuracy >= 50) rankBadge = '🛡️ Pengembara Kota Bahasa';
+
+      document.getElementById('result-badge').innerText = rankBadge;
+      document.getElementById('result-score').innerText = gameState.score;
+      document.getElementById('result-accuracy').innerText = `${accuracy}%`;
+      document.getElementById('result-match-count').innerText = `${gameState.matchedCount} / ${gameState.wrongAttempts}`;
+      document.getElementById('result-time-spent').innerText = timeFormatted;
+
+      document.getElementById('modal-result').classList.remove('hidden');
+    }
+
+    /* ==========================================================================
+       11. LEADERBOARD SYSTEM (LOCALSTORAGE)
+       ========================================================================== */
+    const LEADERBOARD_KEY = 'misi_kata_kerja_leaderboard';
+
+    function getLeaderboard() {
+      const data = localStorage.getItem(LEADERBOARD_KEY);
+      return data ? JSON.parse(data) : [];
+    }
+
+    function saveScoreToLeaderboard(name) {
+      if (!name.trim()) name = 'Pemain Murid';
+      const list = getLeaderboard();
+      const accuracy = gameState.totalAttempts > 0 
+        ? Math.round((gameState.matchedCount / gameState.totalAttempts) * 100) 
+        : 0;
+
+      list.push({
+        name: name.trim(),
+        score: gameState.score,
+        accuracy: accuracy,
+        date: new Date().toLocaleDateString('ms-MY')
+      });
+
+      // Sort by Highest Score, then Highest Accuracy
+      list.sort((a, b) => b.score - a.score || b.accuracy - a.accuracy);
+      const top10 = list.slice(0, 10);
+
+      localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(top10));
+      renderLeaderboardTable();
+      
+      showToast('🏆 TERKAPAI!', 'Markah anda telah berjaya disimpan ke Papan Markah.', 'border-amber-500/50 bg-slate-900/90 text-amber-300');
+    }
+
+    function renderLeaderboardTable() {
+      const tbody = document.getElementById('leaderboard-table-body');
+      tbody.innerHTML = '';
+      const list = getLeaderboard();
+
+      if (list.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-500 italic">Tiada rekod markah lagi. Mari main!</td></tr>`;
+        return;
+      }
+
+      list.forEach((item, index) => {
+        const tr = document.createElement('tr');
+        tr.className = index % 2 === 0 ? 'bg-slate-900/40' : 'bg-slate-900/80';
+        tr.innerHTML = `
+          <td class="p-2.5 font-bold ${index === 0 ? 'text-amber-400' : index === 1 ? 'text-slate-300' : index === 2 ? 'text-amber-600' : 'text-slate-500'}">#${index + 1}</td>
+          <td class="p-2.5 font-semibold text-white">${escapeHTML(item.name)}</td>
+          <td class="p-2.5 text-center font-bold text-amber-300">${item.score}</td>
+          <td class="p-2.5 text-center font-mono text-emerald-400">${item.accuracy}%</td>
+          <td class="p-2.5 text-right text-slate-400 text-[10px]">${item.date}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function escapeHTML(str) {
+      return str.replace(/[&<>'"]/g, 
+        tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+      );
+    }
+
+    /* ==========================================================================
+       12. UI EVENT LISTENERS & MODAL CONTROLS
+       ========================================================================== */
+    function bindUIEvents() {
+      // Start Game Button
+      document.getElementById('btn-start-game').addEventListener('click', () => {
+        playSound('click');
+        startNewGame();
+      });
+
+      // Teacher Mode Modal Buttons
+      document.getElementById('btn-open-teacher-menu').addEventListener('click', () => {
+        playSound('click');
+        document.getElementById('modal-teacher').classList.remove('hidden');
+      });
+      document.getElementById('btn-open-teacher-hud').addEventListener('click', () => {
+        playSound('click');
+        document.getElementById('modal-teacher').classList.remove('hidden');
+      });
+      document.getElementById('btn-close-teacher').addEventListener('click', () => {
+        playSound('click');
+        document.getElementById('modal-teacher').classList.add('hidden');
+      });
+
+      // Settings Input Change Listeners
+      document.getElementById('setting-sensitivity').addEventListener('input', (e) => {
+        gameSettings.pinchThreshold = parseFloat(e.target.value);
+        document.getElementById('val-sensitivity').innerText = gameSettings.pinchThreshold.toFixed(3);
+      });
+      document.getElementById('setting-card-speed').addEventListener('input', (e) => {
+        gameSettings.cardSpeedMultiplier = parseFloat(e.target.value);
+        document.getElementById('val-card-speed').innerText = `${gameSettings.cardSpeedMultiplier.toFixed(1)}x`;
+      });
+      document.getElementById('btn-save-teacher').addEventListener('click', () => {
+        playSound('click');
+        gameSettings.gameTimeSeconds = parseInt(document.getElementById('setting-time').value) || 120;
+        gameSettings.scorePerCorrect = parseInt(document.getElementById('setting-score-add').value) || 10;
+        gameSettings.scorePenaltyWrong = parseInt(document.getElementById('setting-score-sub').value) || 3;
+        gameSettings.showSkeleton = document.getElementById('setting-show-skeleton').checked;
+        gameSettings.soundEnabled = document.getElementById('setting-sound').checked;
+
+        document.getElementById('modal-teacher').classList.add('hidden');
+        showToast('⚙️ TETAPAN DISIMPAN', 'Tetapan Mod Guru telah dikemaskini.', 'border-purple-500/50 bg-slate-900/90 text-purple-300');
+      });
+      document.getElementById('btn-reset-settings').addEventListener('click', () => {
+        playSound('click');
+        gameSettings = {
+          gameTimeSeconds: 120,
+          pinchThreshold: 0.065,
+          cardSpeedMultiplier: 1.0,
+          scorePerCorrect: 10,
+          scorePenaltyWrong: 3,
+          showSkeleton: true,
+          soundEnabled: true
+        };
+        document.getElementById('setting-time').value = 120;
+        document.getElementById('setting-sensitivity').value = 0.065;
+        document.getElementById('val-sensitivity').innerText = '0.065';
+        document.getElementById('setting-card-speed').value = 1.0;
+        document.getElementById('val-card-speed').innerText = '1.0x';
+        document.getElementById('setting-score-add').value = 10;
+        document.getElementById('setting-score-sub').value = 3;
+        document.getElementById('setting-show-skeleton').checked = true;
+        document.getElementById('setting-sound').checked = true;
+      });
+
+      // Leaderboard Modal
+      document.getElementById('btn-open-leaderboard').addEventListener('click', () => {
+        playSound('click');
+        renderLeaderboardTable();
+        document.getElementById('modal-leaderboard').classList.remove('hidden');
+      });
+      document.getElementById('btn-close-leaderboard').addEventListener('click', () => {
+        playSound('click');
+        document.getElementById('modal-leaderboard').classList.add('hidden');
+      });
+      document.getElementById('btn-clear-leaderboard').addEventListener('click', () => {
+        playSound('click');
+        document.getElementById('modal-confirm').classList.remove('hidden');
+      });
+      document.getElementById('btn-confirm-cancel').addEventListener('click', () => {
+        playSound('click');
+        document.getElementById('modal-confirm').classList.add('hidden');
+      });
+      document.getElementById('btn-confirm-ok').addEventListener('click', () => {
+        playSound('click');
+        localStorage.removeItem(LEADERBOARD_KEY);
+        renderLeaderboardTable();
+        document.getElementById('modal-confirm').classList.add('hidden');
+      });
+
+      // Hint Modal
+      document.getElementById('btn-pause-hint').addEventListener('click', () => {
+        playSound('click');
+        document.getElementById('modal-hint').classList.remove('hidden');
+      });
+      document.getElementById('btn-close-hint').addEventListener('click', () => {
+        playSound('click');
+        document.getElementById('modal-hint').classList.add('hidden');
+      });
+
+      // Toggle Sound Button
+      document.getElementById('btn-toggle-sound').addEventListener('click', () => {
+        gameSettings.soundEnabled = !gameSettings.soundEnabled;
+        document.getElementById('btn-toggle-sound').innerText = gameSettings.soundEnabled ? '🔊' : '🔇';
+        playSound('click');
+      });
+
+      // Save Score Button in Results Modal
+      document.getElementById('btn-save-score').addEventListener('click', () => {
+        playSound('click');
+        const nameInput = document.getElementById('player-name-input').value;
+        saveScoreToLeaderboard(nameInput);
+        document.getElementById('btn-save-score').disabled = true;
+        document.getElementById('btn-save-score').innerText = 'Disimpan ✓';
+        document.getElementById('btn-save-score').className = 'px-4 py-2 bg-slate-700 text-slate-400 font-bold rounded-xl text-xs uppercase cursor-not-allowed';
+      });
+
+      // Restart & Main Menu Buttons
+      document.getElementById('btn-restart-game').addEventListener('click', () => {
+        playSound('click');
+        document.getElementById('btn-save-score').disabled = false;
+        document.getElementById('btn-save-score').innerText = 'Simpan';
+        document.getElementById('btn-save-score').className = 'px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs uppercase tracking-wider transition';
+        startNewGame();
+      });
+      document.getElementById('btn-main-menu').addEventListener('click', () => {
+        playSound('click');
+        document.getElementById('modal-result').classList.add('hidden');
+        document.getElementById('modal-start').classList.remove('hidden');
+        document.getElementById('game-hud').classList.add('opacity-0');
+        document.getElementById('camera-panel').classList.add('opacity-0');
+      });
+    }
+
+    /* ==========================================================================
+       13. MAIN ANIMATION & RENDER LOOP
+       ========================================================================== */
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Update Game Mechanics
+      updateGameLoop();
+
+      // Render 3D Scene
+      if (renderer && scene && camera) {
+        renderer.render(scene, camera);
+      }
+
+      // Draw 2D Skeleton / Cursor Overlay
+      drawHandOverlay();
+    }
+
+    window.onload = function() {
+      init3D();
+      initHandTracking();
+      initMouseTouchFallback();
+      bindUIEvents();
+      animate();
+    };
+  </script>
+</body>
+</html>
